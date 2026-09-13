@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SCIENCE MISSION V3: ภารกิจพิชิตโครงงานวิทยาศาสตร์</title>
+    
+    <!-- ========================================== -->
+    <!-- โหลดไลบรารีที่จำเป็น -->
+    <!-- ========================================== -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&family=Orbitron:wght@500;700&family=Jura:wght@500;700&display=swap" rel="stylesheet">
+    
+    <!-- Three.js & MediaPipe -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
+    <style>
+        /* ========================================== */
+        /* CSS VARIABLES & BASE STYLES */
+        /* ========================================== */
+        :root {
+            --neon-blue: #0ea5e9; --neon-purple: #a855f7; --neon-cyan: #22d3ee;
+            --neon-green: #22c55e; --neon-red: #ef4444; --neon-gold: #eab308;
+            --bg-dark: #070913;
+        }
+
+        body {
+            margin: 0; overflow: hidden; background-color: var(--bg-dark);
+            color: #e2e8f0; font-family: 'Kanit', sans-serif;
+            user-select: none; touch-action: none; 
+        }
+
+        .font-sci { font-family: 'Orbitron', sans-serif; } 
+        .font-jura { font-family: 'Jura', sans-serif; }
+
+        /* ========================================== */
+        /* UI COMPONENTS STYLING */
+        /* ========================================== */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(14, 165, 233, 0.3); box-shadow: 0 0 20px rgba(14, 165, 233, 0.1); border-radius: 1rem;
+        }
+
+        #bg-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; display: flex; flex-direction: column; pointer-events: none; }
+        .interactive { pointer-events: auto; } 
+
+        /* สไตล์ Input สำหรับ Login */
+        .sci-input {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--neon-cyan);
+            color: #fff; outline: none;
+            box-shadow: inset 0 0 10px rgba(34, 211, 238, 0.2);
+            transition: all 0.3s ease;
+        }
+        .sci-input:focus {
+            box-shadow: inset 0 0 15px rgba(34, 211, 238, 0.5), 0 0 15px rgba(34, 211, 238, 0.4);
+            border-color: #fff;
+        }
+
+        .choice-card {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+            border: 1px solid rgba(148, 163, 184, 0.3); color: #e2e8f0;
+            transition: all 0.2s ease; cursor: pointer; position: relative; z-index: 20;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3); touch-action: none;
+        }
+        .choice-card:hover, .choice-card.hovered { transform: scale(1.05); border-color: var(--neon-cyan); box-shadow: 0 0 15px rgba(34, 211, 238, 0.5); color: #fff; text-shadow: 0 0 5px rgba(255,255,255,0.5); }
+        .choice-card.grabbing { transform: scale(1.1); box-shadow: 0 0 30px rgba(168, 85, 247, 0.6); border-color: var(--neon-purple); background: linear-gradient(135deg, rgba(51, 65, 85, 0.9), rgba(30, 41, 59, 1)); z-index: 100; }
+
+        #question-container { transition: all 0.3s; background: rgba(15, 23, 42, 0.5); border: 2px dashed rgba(148, 163, 184, 0.4); }
+        #question-container.success { background: rgba(34, 197, 94, 0.15); border-color: var(--neon-green); border-style: solid; box-shadow: 0 0 40px rgba(34, 197, 94, 0.4); }
+        #question-container.error { background: rgba(239, 68, 68, 0.15); border-color: var(--neon-red); border-style: solid; box-shadow: 0 0 40px rgba(239, 68, 68, 0.4); }
+
+        #camera-preview {
+            position: absolute; top: 20px; left: 20px; width: 160px; height: 120px;
+            border: 2px solid var(--neon-cyan); border-radius: 8px; overflow: hidden;
+            box-shadow: 0 0 15px rgba(34, 211, 238, 0.3); z-index: 1000; transform: scaleX(-1);
+            cursor: grab; pointer-events: auto; background: #000;
+        }
+        #camera-preview:active { cursor: grabbing; box-shadow: 0 0 25px rgba(34, 211, 238, 0.6); }
+
+        @keyframes pulse-red { 0% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); } 50% { box-shadow: 0 0 30px rgba(239, 68, 68, 0.8); border-color: rgba(239, 68, 68, 1); } 100% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); } }
+        .timer-warning { animation: pulse-red 1s infinite; color: var(--neon-red) !important; text-shadow: 0 0 10px rgba(239,68,68,0.8); }
+        
+        @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-15px); } 100% { transform: translateY(0px); } }
+        .floating { animation: float 4s ease-in-out infinite; }
+        
+        .neon-text-blue { text-shadow: 0 0 10px rgba(14, 165, 233, 0.8); }
+        .neon-text-cyan { text-shadow: 0 0 10px rgba(34, 211, 238, 0.8); }
+        
+        .hidden-sys { display: none !important; }
+    </style>
+</head>
+<body class="text-slate-100">
+
+    <!-- พื้นหลัง 3D Space -->
+    <canvas id="bg-canvas"></canvas>
+
+    <!-- กล้อง Webcam (ซ่อนวิดีโอหลัก โชว์แค่แคนวาสที่ลากได้) -->
+    <video id="input_video" style="display:none;" playsinline></video>
+    <canvas id="camera-preview" class="hidden-sys interactive"></canvas>
+
+    <!-- UI LAYER หลัก -->
+    <div id="ui-layer" class="p-4 sm:p-8">
+        
+        <!-- ========================================== -->
+        <!-- SCREEN 0: LOGIN (หน้าล็อกอินระบุตัวตน) -->
+        <!-- ========================================== -->
+        <div id="screen-login" class="interactive flex-1 flex flex-col items-center justify-center relative">
+            <div class="glass-panel p-8 sm:p-12 text-center max-w-md w-full floating border-cyan-500/50">
+                <div class="text-5xl mb-4 text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.8)]"><i class="fa-solid fa-user-astronaut"></i></div>
+                <h2 class="text-3xl font-sci font-bold mb-2 text-white neon-text-cyan">STUDENT LOGIN</h2>
+                <p class="text-slate-400 mb-6 text-sm">ระบุตัวตนเพื่อเข้าสู่ระบบฐานข้อมูลการสอบ</p>
+                
+                <form id="login-form" onsubmit="LoginSys.handleLogin(event)" class="space-y-4">
+                    <div>
+                        <input type="text" id="inp-firstname" required placeholder="ชื่อ (First Name)" class="sci-input w-full p-3 rounded-lg text-center font-bold tracking-wider">
+                    </div>
+                    <div>
+                        <input type="text" id="inp-lastname" required placeholder="นามสกุล (Last Name)" class="sci-input w-full p-3 rounded-lg text-center font-bold tracking-wider">
+                    </div>
+                    
+                    <button type="submit" class="w-full mt-4 px-8 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg shadow-[0_0_15px_rgba(34,211,238,0.5)] transition-all transform hover:scale-105">
+                        <i class="fa-solid fa-fingerprint mr-2"></i> ACCESS SYSTEM
+                    </button>
+                </form>
+
+                <!-- เครดิตผู้จัดทำ (Login Screen) -->
+                <div class="mt-8 pt-6 border-t border-cyan-900/40 flex flex-col items-center justify-center gap-2">
+                    <div class="text-xs text-slate-400 tracking-widest">จัดทำโดย</div>
+                    <div class="flex items-center gap-3 px-4 py-2 bg-slate-800/60 rounded-full border border-slate-700 shadow-inner">
+                        <img src="https://i.postimg.cc/vczmcLPB/image.png" onerror="this.src='https://placehold.co/100x100/0ea5e9/ffffff?text=พี่นัท'" alt="อ.พี่นัท Logo" class="w-8 h-8 rounded-full border-2 border-cyan-500 object-cover bg-slate-900 shadow-[0_0_10px_rgba(34,211,238,0.4)]">
+                        <span class="font-bold text-cyan-300 tracking-wide text-sm">อ.พี่นัท</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- SCREEN 1: MAIN MENU (หน้าหลัก) -->
+        <!-- ========================================== -->
+        <div id="screen-menu" class="hidden-sys interactive flex-1 flex flex-col items-center justify-center relative">
+            <div class="glass-panel p-8 sm:p-12 text-center max-w-2xl w-full floating border-blue-500/50">
+                <div class="text-6xl mb-4 text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.8)]"><i class="fa-solid fa-satellite"></i></div>
+                <h1 class="text-4xl sm:text-5xl font-sci font-bold mb-2 text-white neon-text-cyan tracking-wider">SCIENCE MISSION V3</h1>
+                <h2 class="text-xl sm:text-2xl text-blue-300 mb-8 font-semibold">ภารกิจพิชิตโครงงานวิทยาศาสตร์</h2>
+                
+                <div class="bg-slate-800/80 border border-slate-600 rounded-lg p-3 mb-6 inline-block">
+                    <span class="text-slate-400 text-sm">AGENT RECOGNIZED:</span><br>
+                    <span id="display-player-name" class="font-bold text-lg text-amber-400 tracking-wider">Unknown</span>
+                </div>
+
+                <p class="text-md text-slate-300 mb-8">
+                    "เดินซ้าย-ขวาเพื่อเลือกคำตอบ แล้ว <span class="text-amber-400 font-bold text-lg">กระโดด!</span> เพื่อยืนยัน (หรือคลิกด้วยเมาส์)"
+                </p>
+
+                <div id="cam-status" class="mb-6 text-sm font-semibold text-cyan-200">
+                    <span class="text-amber-400"><i class="fa-solid fa-spinner fa-spin"></i> Initializing Camera System...</span>
+                </div>
+
+                <div class="flex flex-col sm:flex-row justify-center gap-4">
+                    <button onclick="GameSys.startGame()" id="btn-start" class="px-8 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-full shadow-[0_0_15px_rgba(34,211,238,0.5)] transition-all transform hover:scale-105 disabled:opacity-50">
+                        <i class="fa-solid fa-rocket mr-2"></i> START MISSION
+                    </button>
+                    <button onclick="GameSys.showHowToPlay()" class="px-8 py-3 bg-transparent border-2 border-purple-500 hover:bg-purple-900/50 text-purple-300 hover:text-white font-bold rounded-full shadow-[0_0_10px_rgba(168,85,247,0.3)] transition-all">
+                        <i class="fa-solid fa-book mr-2"></i> HOW TO PLAY
+                    </button>
+                </div>
+                
+                <div class="mt-8 flex justify-between items-center px-4">
+                    <button onclick="AudioSys.toggleSound()" id="btn-sound" class="text-slate-400 hover:text-cyan-400 transition">
+                        <i class="fa-solid fa-volume-high text-xl"></i>
+                    </button>
+                    <button onclick="LoginSys.logout()" class="text-sm text-red-400 hover:text-red-300 transition underline">Switch User</button>
+                </div>
+
+                <!-- เครดิตผู้จัดทำ (Main Menu) -->
+                <div class="mt-6 pt-5 border-t border-cyan-900/40 flex flex-col items-center justify-center gap-2">
+                    <div class="text-xs text-slate-400 tracking-widest">จัดทำโดย</div>
+                    <div class="flex items-center gap-3 px-5 py-2 bg-slate-800/60 rounded-full border border-slate-700 hover:border-cyan-500 transition-colors shadow-inner">
+                        <img src="https://i.postimg.cc/vczmcLPB/image.png" onerror="this.src='https://placehold.co/100x100/0ea5e9/ffffff?text=พี่นัท'" alt="อ.พี่นัท Logo" class="w-9 h-9 rounded-full border-2 border-cyan-500 object-cover bg-slate-900 shadow-[0_0_10px_rgba(34,211,238,0.4)]">
+                        <span class="font-bold text-cyan-300 tracking-wide">อ.พี่นัท</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- MODAL: HOW TO PLAY -->
+        <!-- ========================================== -->
+        <div id="modal-howto" class="interactive hidden-sys absolute inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
+            <div class="glass-panel p-8 max-w-lg w-full relative border-cyan-500/50">
+                <button onclick="GameSys.hideHowToPlay()" class="absolute top-4 right-4 text-slate-400 hover:text-white text-2xl transition"><i class="fa-solid fa-xmark"></i></button>
+                <h2 class="text-2xl font-sci text-cyan-400 mb-6 border-b border-cyan-800 pb-2 neon-text-cyan"><i class="fa-solid fa-gamepad mr-2"></i> HOW TO PLAY</h2>
+                
+                <div class="space-y-4 text-sm sm:text-base text-slate-200">
+                    <div class="flex items-start gap-4">
+                        <div class="text-3xl text-cyan-400 w-10 text-center"><i class="fa-solid fa-street-view"></i></div>
+                        <div><strong class="text-white">STEP 1:</strong> ยืนห่างจากกล้อง 1.5 - 2 เมตร ให้กล้องมองเห็นทั้งตัว</div>
+                    </div>
+                    <div class="flex items-start gap-4">
+                        <div class="text-3xl text-purple-400 w-10 text-center"><i class="fa-solid fa-arrows-left-right"></i></div>
+                        <div><strong class="text-white">STEP 2:</strong> <b>เดินซ้าย-ขวา</b> เพื่อขยับตัวผู้เล่น (Avatar) ไปชี้ที่ <b>ตัวเลือกคำตอบ</b></div>
+                    </div>
+                    <div class="flex items-start gap-4">
+                        <div class="text-3xl text-amber-400 w-10 text-center"><i class="fa-solid fa-person-arrow-up-from-line"></i></div>
+                        <div><strong class="text-white">STEP 3:</strong> <b>"กระโดด" (JUMP)</b> เพื่อเป็นการกดยืนยันคำตอบนั้น!</div>
+                    </div>
+                    <div class="mt-4 p-3 bg-blue-900/30 rounded-lg text-xs text-blue-200 border border-blue-800 shadow-sm">
+                        <i class="fa-solid fa-circle-info text-blue-400"></i> คุณสามารถใช้ <b>เมาส์</b> หรือ <b>นิ้วสัมผัส</b> คลิกที่คำตอบได้เช่นกัน 
+                    </div>
+                </div>
+                <div class="mt-6 text-center">
+                    <button onclick="GameSys.hideHowToPlay()" class="px-6 py-2 bg-cyan-600 text-white rounded-full font-bold hover:bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.5)] transition">GOT IT</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- SCREEN 2: GAME UI (หน้าจอสอบ) -->
+        <!-- ========================================== -->
+        <div id="screen-game" class="hidden-sys flex-1 flex flex-col h-full w-full max-w-6xl mx-auto">
+            
+            <div class="glass-panel p-4 flex justify-between items-center mb-4 interactive">
+                <div class="flex items-center gap-4">
+                    <button onclick="GameSys.returnToMenu()" class="text-slate-400 hover:text-red-400 transition text-xl"><i class="fa-solid fa-arrow-left"></i></button>
+                    <div class="bg-slate-800/80 px-4 py-1 rounded-full border border-slate-600 font-bold text-cyan-300 shadow-sm">
+                        Q: <span id="ui-qnum" class="text-white">1</span>/5
+                    </div>
+                </div>
+                
+                <div id="ui-timer-box" class="text-center font-sci text-2xl font-bold text-white bg-slate-800/80 px-6 py-2 rounded-lg border border-slate-600 flex items-center gap-2 transition-all">
+                    <i class="fa-regular fa-clock text-cyan-400"></i> <span id="ui-timer">20</span>s
+                </div>
+
+                <div class="flex items-center gap-4 text-right">
+                    <div>
+                        <div class="text-xs text-slate-400 uppercase tracking-wider font-bold">Score</div>
+                        <div id="ui-score" class="font-sci text-2xl text-amber-400 font-bold drop-shadow-[0_0_5px_rgba(251,191,36,0.8)]">000</div>
+                    </div>
+                    <div id="ui-energy" class="flex gap-1 text-red-500 text-xl drop-shadow-[0_0_5px_rgba(239,68,68,0.8)]"></div>
+                </div>
+            </div>
+
+            <!-- กล่องคำถาม -->
+            <div id="question-container" class="glass-panel p-6 sm:p-10 mb-4 text-center z-10 flex-1 flex flex-col items-center justify-center relative transition-all duration-300 interactive overflow-hidden">
+                <div id="ui-category" class="text-purple-300 text-sm font-bold tracking-widest uppercase mb-4 bg-purple-900/40 px-3 py-1 rounded-full border border-purple-700 z-10">CATEGORY</div>
+                
+                <h2 id="ui-question" class="text-xl sm:text-2xl md:text-3xl font-semibold leading-relaxed relative z-20 text-white drop-shadow-md">
+                    Loading Question...
+                </h2>
+                
+                <div class="mt-4 text-cyan-400 text-sm italic z-10 opacity-70 animate-pulse">
+                    <i class="fa-solid fa-arrows-left-right mb-1 text-lg"></i><br>เดินซ้าย-ขวา เพื่อเลือกตัวเลือก แล้ว "กระโดด" เพื่อตอบ
+                </div>
+                
+                <!-- เลเยอร์แสดงผลตรวจคำตอบ -->
+                <div id="question-result-overlay" class="absolute inset-0 flex flex-col items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300 z-40 bg-slate-900/95 backdrop-blur-md">
+                    <div id="question-result-icon" class="text-6xl mb-2 drop-shadow-lg"></div>
+                    <div id="question-result-text" class="text-4xl font-bold font-sci tracking-widest drop-shadow-lg"></div>
+                    <div id="question-result-pts" class="text-xl font-bold font-sci tracking-widest mt-2 drop-shadow-md"></div>
+                    <!-- แนวคิดสำคัญ -->
+                    <div id="question-result-desc" class="mt-6 px-8 py-3 bg-slate-800/80 border border-slate-600 rounded-lg text-slate-300 text-sm max-w-2xl hidden"></div>
+                </div>
+            </div>
+
+            <!-- แถบแสดงตำแหน่งผู้เล่น (Avatar) สำหรับ Zone Jump -->
+            <div class="relative w-full h-8 mb-2 z-20 interactive">
+                <div id="player-indicator" class="absolute top-0 w-14 h-14 bg-cyan-600 rounded-full flex items-center justify-center text-white shadow-[0_0_20px_rgba(34,211,238,0.8)] border-2 border-white transition-all duration-100 transform -translate-x-1/2 -translate-y-6" style="left: 50%; display: none;">
+                    <i class="fa-solid fa-street-view text-3xl drop-shadow-md"></i>
+                </div>
+            </div>
+
+            <!-- บริเวณพื้นที่ตัวเลือก 3 โซน -->
+            <div id="ui-choices" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 z-20 interactive"></div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- SCREEN 3: RESULT DASHBOARD (หน้าสรุปและบันทึกผล) -->
+        <!-- ========================================== -->
+        <div id="screen-result" class="hidden-sys interactive absolute inset-0 z-50 flex items-center justify-center bg-slate-950/90 backdrop-blur-lg p-4">
+            <div class="glass-panel p-8 sm:p-12 max-w-3xl w-full text-center relative overflow-hidden border-cyan-500/50 shadow-[0_0_30px_rgba(34,211,238,0.2)]">
+                <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-400 via-purple-500 to-cyan-400"></div>
+                
+                <h1 class="text-4xl sm:text-5xl font-sci font-bold mb-2 text-cyan-400 tracking-widest neon-text-cyan" id="result-header">MISSION COMPLETE</h1>
+                <div class="text-xl text-slate-400 mb-6 font-semibold" id="result-subheader">EXAM SIMULATION FINISHED</div>
+
+                <div class="flex flex-col md:flex-row gap-6 mb-6">
+                    <div class="flex-1 bg-slate-800/50 p-6 rounded-xl border border-slate-700 shadow-inner flex flex-col items-center justify-center">
+                        <div id="result-icon" class="text-6xl mb-4 text-amber-400 drop-shadow-[0_0_10px_rgba(251,191,36,0.8)]"><i class="fa-solid fa-trophy"></i></div>
+                        <div class="text-sm text-slate-400 uppercase tracking-widest mb-1 font-bold">YOUR RANK</div>
+                        <div id="result-rank" class="text-2xl font-bold text-cyan-300">MASTER SCIENTIST</div>
+                    </div>
+
+                    <div class="flex-1 grid grid-cols-2 gap-4 text-left">
+                        <div class="bg-slate-800/40 p-4 rounded-lg border border-slate-700">
+                            <div class="text-slate-400 text-xs uppercase mb-1 font-bold">Total Score</div>
+                            <div id="result-score" class="font-sci text-3xl text-cyan-400 font-bold drop-shadow-[0_0_5px_rgba(34,211,238,0.5)]">0</div>
+                        </div>
+                        <div class="bg-slate-800/40 p-4 rounded-lg border border-slate-700">
+                            <div class="text-slate-400 text-xs uppercase mb-1 font-bold">Time Used</div>
+                            <div id="result-time" class="font-sci text-3xl text-white font-bold">00:00</div>
+                        </div>
+                        <div class="bg-slate-800/40 p-4 rounded-lg border border-slate-700">
+                            <div class="text-slate-400 text-xs uppercase mb-1 font-bold">Correct / Wrong</div>
+                            <div class="font-sci text-2xl text-white font-bold"><span id="result-correct" class="text-green-400">0</span> / <span id="result-wrong" class="text-red-400">0</span></div>
+                        </div>
+                        <div class="bg-slate-800/40 p-4 rounded-lg border border-slate-700">
+                            <div class="text-slate-400 text-xs uppercase mb-1 font-bold">Accuracy</div>
+                            <div id="result-acc" class="font-sci text-3xl text-purple-400 font-bold drop-shadow-[0_0_5px_rgba(168,85,247,0.5)]">0%</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- สถานะการบันทึกข้อมูลไป Google Apps Script -->
+                <div id="backend-status" class="mb-8 p-3 rounded-lg border border-slate-700 bg-slate-800/80 text-sm font-bold flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-satellite-dish animate-pulse text-cyan-400"></i> 
+                    <span id="backend-status-text" class="text-cyan-300">Transmitting Data to HQ...</span>
+                </div>
+
+                <div class="flex justify-center gap-4">
+                    <button onclick="GameSys.returnToMenu()" class="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-full font-bold transition shadow-sm border border-slate-500">
+                        <i class="fa-solid fa-house mr-2"></i> MAIN MENU
+                    </button>
+                    <button id="btn-playagain" onclick="GameSys.startGame()" class="px-8 py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-full font-bold shadow-[0_0_15px_rgba(34,211,238,0.5)] transition transform hover:scale-105 opacity-50 cursor-not-allowed" disabled>
+                        <i class="fa-solid fa-rotate-right mr-2"></i> PLAY AGAIN
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN JAVASCRIPT LOGIC -->
+    <script>
+        // ==========================================
+        // 🔐 LOGIN & USER SYSTEM
+        // ==========================================
+        const LoginSys = {
+            init() {
+                const fName = localStorage.getItem('sm_firstname');
+                const lName = localStorage.getItem('sm_lastname');
+                if(fName && lName) {
+                    GameState.student.firstName = fName;
+                    GameState.student.lastName = lName;
+                    this.showMenu();
+                }
+            },
+            handleLogin(e) {
+                e.preventDefault();
+                const fName = document.getElementById('inp-firstname').value.trim();
+                const lName = document.getElementById('inp-lastname').value.trim();
+                if(fName && lName) {
+                    GameState.student.firstName = fName;
+                    GameState.student.lastName = lName;
+                    localStorage.setItem('sm_firstname', fName);
+                    localStorage.setItem('sm_lastname', lName);
+                    AudioSys.playGrab();
+                    this.showMenu();
+                }
+            },
+            logout() {
+                localStorage.removeItem('sm_firstname');
+                localStorage.removeItem('sm_lastname');
+                GameState.student.firstName = '';
+                GameState.student.lastName = '';
+                document.getElementById('screen-menu').classList.add('hidden-sys');
+                document.getElementById('screen-login').classList.remove('hidden-sys');
+                document.getElementById('inp-firstname').value = '';
+                document.getElementById('inp-lastname').value = '';
+            },
+            showMenu() {
+                document.getElementById('screen-login').classList.add('hidden-sys');
+                document.getElementById('screen-menu').classList.remove('hidden-sys');
+                document.getElementById('display-player-name').innerText = `${GameState.student.firstName} ${GameState.student.lastName}`;
+                if(AudioSys.ctx === null) AudioSys.init();
+            }
+        };
+
+        // ==========================================
+        // 📡 BACKEND SYSTEM (Google Apps Script)
+        // ==========================================
+        const BackendSys = {
+            url: "https://script.google.com/macros/s/AKfycbwuz29I3dKjc0brSgLWHFJmlpPrb-G4c2Xt-ESXY6LemtH5Chjbp6jtki0IxvXsXTC9/exec",
+            
+            async saveAttempt(payload) {
+                const statusIcon = document.querySelector('#backend-status i');
+                const statusText = document.getElementById('backend-status-text');
+                const btnPlayAgain = document.getElementById('btn-playagain');
+                
+                try {
+                    statusIcon.className = "fa-solid fa-satellite-dish animate-pulse text-cyan-400";
+                    statusText.innerText = "Transmitting Data to HQ...";
+                    statusText.className = "text-cyan-300";
+
+                    const response = await fetch(this.url, {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if(result.success) {
+                        statusIcon.className = "fa-solid fa-circle-check text-green-400";
+                        statusText.innerText = "Data Saved Successfully!";
+                        statusText.className = "text-green-400";
+                    } else {
+                        throw new Error(result.message);
+                    }
+                } catch (error) {
+                    console.error("Backend Error:", error);
+                    statusIcon.className = "fa-solid fa-triangle-exclamation text-amber-400";
+                    statusText.innerText = "Transmission Failed (Local Mode Active)";
+                    statusText.className = "text-amber-400";
+                } finally {
+                    btnPlayAgain.disabled = false;
+                    btnPlayAgain.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            }
+        };
+
+        // ==========================================
+        // 📝 QUESTION BANK (30 ข้อ อ้างอิงเอกสารเป๊ะ)
+        // ==========================================
+        const QuestionBank = [
+            { id: "Q01", q: "จุดเริ่มต้นที่สำคัญที่สุดของการทำโครงงานวิทยาศาสตร์คือข้อใด?", c: ["การศึกษาข้อมูลจากอินเทอร์เน็ต", "การสังเกตและการเลือกปัญหาที่สนใจ", "การนำเสนอผลงาน"], a: 1, cat: "จุดเริ่มต้นและการเลือกปัญหา", desc: "โครงงานเริ่มจากความสงสัยหรือปัญหาที่ผู้เรียนพบเจอในชีวิตประจำวัน" },
+            { id: "Q02", q: "ในการวิเคราะห์ปัญหาด้วย 'แผนภาพต้นไม้ปัญหา' (Problem Tree) ส่วนของ 'รากแก้ว' เปรียบเสมือนสิ่งใด?", c: ["ผลกระทบที่เกิดขึ้น", "สาเหตุหลักของปัญหา", "ปัญหาหลักที่ต้องการแก้ไข"], a: 1, cat: "Problem Tree", desc: "รากเปรียบเสมือน 'สาเหตุ' ที่ฝังลึกและก่อให้เกิดปัญหา" },
+            { id: "Q03", q: "จากปัญหา 'ขยะล้นถังในโรงเรียน' ข้อใดจัดเป็นผลกระทบ (ส่วนของใบ/กิ่งก้าน) ในแผนภาพต้นไม้?", c: ["นักเรียนไม่ยอมแยกขยะ", "ถังขยะมีจำนวนไม่เพียงพอ", "ส่งกลิ่นเหม็นและเป็นแหล่งเพาะพันธุ์เชื้อโรค"], a: 2, cat: "Problem Tree", desc: "ใบ/กิ่งก้าน คือ 'ผลกระทบ' ที่เกิดตามมาจากตัวปัญหาหลัก" },
+            { id: "Q04", q: "การที่สมาชิกในทีมร่วมกันแชร์ว่า 'ตนเองเก่งอะไร' และ 'สนใจอะไร' ในคาบแรก มีจุดประสงค์หลักเพื่อสิ่งใด?", c: ["เพื่อให้ครูให้คะแนนได้ง่ายขึ้น", "เพื่อกำหนดทิศทางและความสนใจร่วมกันของทีม", "เพื่อจับผิดเพื่อนที่ไม่ได้ทำงาน"], a: 1, cat: "จุดเริ่มต้นและการเลือกปัญหา", desc: "การรู้จักจุดแข็งของเพื่อนร่วมทีมช่วยให้เลือกหัวข้อที่ทุกคนมีส่วนร่วมได้ดีที่สุด" },
+            { id: "Q05", q: "โครงงานประเภทใดที่มีเป้าหมายหลักคือการลงพื้นที่เพื่อหาคำตอบว่า 'มีอะไรอยู่เท่าไหร่' เช่น การเดินนับ แจกแบบสอบถาม?", c: ["โครงงานประเภททดลอง", "โครงงานประเภทสำรวจ", "โครงงานประเภทสิ่งประดิษฐ์"], a: 1, cat: "ประเภทของโครงงาน", desc: "โครงงานสำรวจเน้นการเก็บรวบรวมข้อมูลที่มีอยู่แล้วในธรรมชาติหรือสังคม" },
+            { id: "Q06", q: "หัวข้อ 'การศึกษาพฤติกรรมการทิ้งขยะพลาสติกของนักเรียน ม.1 ในโรงเรียน' จัดเป็นโครงงานประเภทใด?", c: ["โครงงานประเภทสำรวจ", "โครงงานประเภททดลอง", "โครงงานประเภทสิ่งประดิษฐ์"], a: 0, cat: "ประเภทของโครงงาน", desc: "เป็นการเข้าไปเก็บข้อมูลพฤติกรรมโดยไม่มีการควบคุมตัวแปร จึงเป็นการสำรวจ" },
+            { id: "Q07", q: "หัวข้อ 'เครื่องกรองฝุ่น PM 2.5 พลังงานแสงอาทิตย์จากเปลือกข้าวโพด' จัดเป็นโครงงานประเภทใด?", c: ["โครงงานประเภทสำรวจ", "โครงงานประเภททดลอง", "โครงงานประเภทสิ่งประดิษฐ์"], a: 2, cat: "ประเภทของโครงงาน", desc: "เน้นการสร้างสรรค์หรือพัฒนาชิ้นงานขึ้นมาใหม่เพื่อแก้ปัญหา" },
+            { id: "Q08", q: "โครงงานประเภทใดที่มีการแบ่งกลุ่มการทดลอง ตั้งสมมติฐาน และควบคุมตัวแปรอย่างชัดเจน?", c: ["โครงงานประเภทสำรวจ", "โครงงานประเภททดลอง", "โครงงานประเภทสิ่งประดิษฐ์"], a: 1, cat: "ประเภทของโครงงาน", desc: "โครงงานทดลองต้องมีการกำหนด ตัวแปรต้น ตัวแปรตาม และตัวแปรควบคุม" },
+            { id: "Q09", q: "โครงงานวิทยาศาสตร์ประเภทใดที่ต้องใช้หลักการหรือสูตรทางคณิตศาสตร์มาอธิบายเรื่องยาก ๆ ที่ยังไม่มีใครพิสูจน์ได้?", c: ["โครงงานประเภทสำรวจ", "โครงงานประเภททดลอง", "โครงงานประเภททฤษฎี"], a: 2, cat: "ประเภทของโครงงาน", desc: "โครงงานทฤษฎีเน้นการสร้างแบบจำลองทางคณิตศาสตร์เพื่ออธิบายปรากฏการณ์" },
+            { id: "Q10", q: "การคาดคะเนคำตอบล่วงหน้าอย่างมีเหตุผล เรียกว่าอะไร?", c: ["การกำหนดตัวแปร", "การตั้งสมมติฐาน", "การสรุปผล"], a: 1, cat: "สมมติฐาน", desc: "สมมติฐานคือการคาดเดาคำตอบอย่างมีหลักการก่อนลงมือทดลองจริง" },
+            { id: "Q11", q: "'สิ่งที่เราต้องการทดลอง อยากรู้ว่าเป็นสาเหตุของผลลัพธ์นั้นหรือไม่ โดยเราตั้งใจจัดให้แตกต่างกัน' คือความหมายของข้อใด?", c: ["ตัวแปรต้น", "ตัวแปรตาม", "ตัวแปรควบคุม"], a: 0, cat: "ตัวแปรต้น", desc: "ตัวแปรต้น (อิสระ) คือสิ่งที่เราจงใจทำให้ต่างกันเพื่อดูผลลัพธ์" },
+            { id: "Q12", q: "'สิ่งที่เราต้องจัดให้เหมือนกันทุกประการ เพื่อไม่ให้ผลการทดลองคลาดเคลื่อน' คือความหมายของข้อใด?", c: ["ตัวแปรต้น", "ตัวแปรตาม", "ตัวแปรควบคุม"], a: 2, cat: "ตัวแปรควบคุม", desc: "ตัวแปรควบคุมต้องคงที่เสมอ เพื่อให้มั่นใจว่าผลลัพธ์เกิดจากตัวแปรต้นเท่านั้น" },
+            { id: "Q13", q: "ฟารุดอยากรู้ว่า ปริมาณแสงแดด มีผลต่อความสูงของต้นมะเขือเทศหรือไม่ เธอจึงปลูก 3 กระถางในที่ร่ม, แดดรำไร, กลางแจ้ง ข้อใดคือ ตัวแปรต้น?", c: ["ปริมาณแสงแดด", "ความสูงของต้นมะเขือเทศ", "ปริมาณน้ำที่รด"], a: 0, cat: "ตัวแปรต้น", desc: "ปริมาณแสงแดดคือสิ่งที่ฟารุดจัดให้แตกต่างกัน (ร่ม, รำไร, กลางแจ้ง)" },
+            { id: "Q14", q: "จากสถานการณ์ของฟารุด ข้อใดคือ ตัวแปรตาม?", c: ["ปริมาณแสงแดด", "ความสูงของต้นมะเขือเทศ", "ปริมาณน้ำที่รด"], a: 1, cat: "ตัวแปรตาม", desc: "ตัวแปรตามคือ 'ผล' ที่ตามมาจากการจัดปริมาณแสงแดดที่ต่างกัน" },
+            { id: "Q15", q: "จากสถานการณ์ของฟารุด ข้อใดคือ ตัวแปรควบคุม?", c: ["ปริมาณแสงแดด และ สถานที่วางกระถาง", "ความสูงของต้นมะเขือเทศ และ จำนวนใบ", "ปริมาณน้ำที่รด และ สายพันธุ์ของต้นมะเขือเทศ"], a: 2, cat: "ตัวแปรควบคุม", desc: "น้ำและสายพันธุ์ต้องเหมือนกัน เพื่อให้การทดลองมีความยุติธรรมและน่าเชื่อถือ" },
+            { id: "Q16", q: "อาลีฟต้องการทดลองว่าน้ำยาล้างจานยี่ห้อ A B และ C สามารถขจัดคราบมันได้แตกต่างกันหรือไม่ ข้อใดคือตัวแปรต้น?", c: ["ปริมาณคราบมัน", "ยี่ห้อของน้ำยาล้างจาน", "ความสะอาดของจาน"], a: 1, cat: "ตัวแปรต้น", desc: "ยี่ห้อของน้ำยาล้างจานคือสิ่งที่ถูกกำหนดให้แตกต่างกันเพื่อเปรียบเทียบ" },
+            { id: "Q17", q: "ข้อใดเรียงลำดับขั้นตอนการทำโครงงานได้ถูกต้อง?", c: ["ตั้งสมมติฐาน -> เลือกปัญหา -> ทดลอง -> สรุปผล", "เลือกปัญหา -> ทดลอง -> ตั้งสมมติฐาน -> สรุปผล", "เลือกปัญหา -> ตั้งสมมติฐาน -> ทดลอง -> สรุปผล"], a: 2, cat: "ขั้นตอนการทำโครงงาน", desc: "เริ่มจากเลือกปัญหา -> คาดเดา (สมมติฐาน) -> หาความจริง (ทดลอง) -> สรุปความจริง" },
+            { id: "Q18", q: "หลังจากทำการทดลองและเก็บบันทึกข้อมูลตัวเลขเรียบร้อยแล้ว ขั้นตอนต่อไปที่ต้องทำคือข้อใด?", c: ["กำหนดตัวแปร", "วิเคราะห์และแปลผลข้อมูล", "จัดทำรายงานและนำเสนอ"], a: 1, cat: "การวิเคราะห์ข้อมูล", desc: "ข้อมูลดิบต้องนำมาวิเคราะห์และแปลผลก่อน จึงจะสามารถนำไปเขียนรายงานได้" },
+            { id: "Q19", q: "การวาดตารางและการทำกราฟเพื่อแสดงผลการทดลอง ควรอยู่ในขั้นตอนใดของการทำโครงงาน?", c: ["กำหนดวัตถุประสงค์", "วิเคราะห์และแปลผลข้อมูล", "ศึกษาข้อมูลที่เกี่ยวข้อง"], a: 1, cat: "การวิเคราะห์ข้อมูล", desc: "ตารางและกราฟเป็นเครื่องมือในการช่วยวิเคราะห์และแปลผลให้เข้าใจง่าย" },
+            { id: "Q20", q: "ขั้นตอนสุดท้ายของการทำโครงงานวิทยาศาสตร์คือข้อใด?", c: ["สรุปผลและอภิปรายผล", "จัดทำรายงานและนำเสนอ", "วิเคราะห์ข้อมูล"], a: 1, cat: "ขั้นตอนการทำโครงงาน", desc: "การนำเสนอโครงงานให้ผู้อื่นเข้าใจคือปลายทางของกระบวนการทั้งหมด" },
+            { id: "Q21", q: "รายงานโครงงานวิทยาศาสตร์ประกอบด้วยเนื้อหาทั้งหมดกี่บท?", c: ["3 บท", "4 บท", "5 บท"], a: 2, cat: "โครงสร้างรายงาน", desc: "ประกอบด้วย: บทนำ, เอกสารที่เกี่ยวข้อง, วิธีดำเนินการ, ผลการศึกษา, และสรุปผล" },
+            { id: "Q22", q: "หากนักเรียนต้องการเขียน 'ที่มาและความสำคัญ' นักเรียนต้องเขียนลงในบทใด?", c: ["บทที่ 1 บทนำ", "บทที่ 2 เอกสารที่เกี่ยวข้อง", "บทที่ 3 วิธีดำเนินการ"], a: 0, cat: "โครงสร้างรายงาน", desc: "บทที่ 1 บทนำ เป็นการเกริ่นว่าทำไมถึงสนใจทำโครงงานเรื่องนี้" },
+            { id: "Q23", q: "'ความรู้พื้นฐาน หลักการทางวิทยาศาสตร์ และงานวิจัยที่เกี่ยวข้อง' เป็นเนื้อหาของบทใด?", c: ["บทที่ 1", "บทที่ 2", "บทที่ 3"], a: 1, cat: "โครงสร้างรายงาน", desc: "บทที่ 2 เป็นการทบทวนวรรณกรรมหรือเอกสารอ้างอิงที่นำมาใช้" },
+            { id: "Q24", q: "หากกรรมการต้องการทราบว่านักเรียนใช้วัสดุอุปกรณ์อะไรบ้าง และมีขั้นตอนการทดลองอย่างไร ต้องเปิดอ่านในบทใด?", c: ["บทที่ 1", "บทที่ 2", "บทที่ 3"], a: 2, cat: "โครงสร้างรายงาน", desc: "บทที่ 3 ระบุวิธีดำเนินการ วัสดุอุปกรณ์ และแผนการปฏิบัติงานอย่างละเอียด" },
+            { id: "Q25", q: "'ตารางบันทึกผลการทดลอง และกราฟแสดงข้อมูล' ควรจัดวางไว้ในบทใดของรายงาน?", c: ["บทที่ 1", "บทที่ 2", "บทที่ 4"], a: 2, cat: "โครงสร้างรายงาน", desc: "บทที่ 4 คือส่วนของการแสดงผลการทดลองและการวิเคราะห์ข้อมูล" },
+            { id: "Q26", q: "รายชื่อหนังสือและเว็บไซต์ที่นักเรียนนำมาใช้อ้างอิง (บรรณานุกรม) จะต้องนำไปใส่ไว้ในส่วนใดของรายงาน?", c: ["ส่วนต้นของรายงาน", "ส่วนเนื้อหาบทที่ 1", "ส่วนท้ายของรายงาน"], a: 2, cat: "บรรณานุกรม", desc: "บรรณานุกรมจะจัดวางอยู่ส่วนท้ายสุดของรายงานเสมอ" },
+            { id: "Q27", q: "หากนักเรียนต้องการข้อมูลงานวิจัยที่น่าเชื่อถือสูงมากเพื่อมาทำโครงงาน นามสกุลเว็บไซต์ (โดเมนเนม) ในข้อใดเหมาะสมที่สุด?", c: [".com", ".ac.th", ".co.th"], a: 1, cat: "Domain Name", desc: ".ac.th ย่อมาจาก Academic หมายถึงเว็บไซต์ของสถาบันการศึกษา" },
+            { id: "Q28", q: "นามสกุลเว็บไซต์ (โดเมนเนม) '.go.th' เป็นเว็บไซต์ของหน่วยงานใด?", c: ["บริษัท ห้างร้าน ธุรกิจการค้า", "องค์กรที่ไม่แสวงหาผลกำไร", "หน่วยงานของรัฐบาล"], a: 2, cat: "Domain Name", desc: ".go.th ย่อมาจาก Government หมายถึงหน่วยงานของรัฐบาล" },
+            { id: "Q29", q: "ข้อมูลจากแหล่งใดต่อไปนี้มีความน่าเชื่อถือน้อยที่สุด และไม่ควรนำมาใช้อ้างอิงหลักในรายงาน?", c: ["บทความวิจัย www.mahidol.ac.th", "ข้อมูลพรรณไม้จากเว็บไซต์ .go.th", "กระทู้จาก Pantip 'สูตรไล่ยุงของคุณยาย'"], a: 2, cat: "ความน่าเชื่อถือของแหล่งข้อมูล", desc: "เว็บบอร์ดเป็นเพียงความคิดเห็นส่วนตัว ยังไม่ผ่านกระบวนการวิจัยที่ตรวจสอบได้" },
+            { id: "Q30", q: "ข่าวปลอม 'น้ำมะนาวรักษามะเร็ง' ข้อใดคือเหตุผลสำคัญที่เราไม่ควรเชื่อข้อมูลพาดหัวข่าวจากเว็บ www.beauty-healthy.com?", c: ["เพราะเป็นเว็บที่มีศัพท์ยากเกินไป", "เพราะเป็นเว็บไซต์พาณิชย์ (.com) อาจแฝงเพื่อขายสินค้า", "เพราะโซดาไม่มีขายทั่วไป"], a: 1, cat: "ความน่าเชื่อถือของแหล่งข้อมูล", desc: "เว็บไซต์การค้ามักมีเป้าหมายหลักในการโฆษณาขายสินค้ามากกว่าการให้ข้อเท็จจริง" }
+        ];
+
+        // ==========================================
+        // 🎮 GAME STATE
+        // ==========================================
+        const GameState = {
+            student: { firstName: "", lastName: "" },
+            attemptId: "",
+            score: 0, energy: 5, timer: 20, qIndex: 0,
+            activeQuestions: [], startTime: 0,
+            stats: { correct: 0, wrong: 0, timeUsed: 0 },
+            questionResults: [], // เก็บบันทึกข้อมูลรายข้อส่ง Backend
+            isAnswering: false, timerInterval: null
+        };
+
+        // ==========================================
+        // 🔊 AUDIO SYSTEM
+        // ==========================================
+        const AudioSys = {
+            ctx: null, isMuted: false,
+            init() {
+                try {
+                    window.AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                    this.updateIcon();
+                } catch(e) { console.warn("Web Audio API not supported"); }
+            },
+            toggleSound() { this.isMuted = !this.isMuted; if(this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); this.updateIcon(); },
+            updateIcon() { const btn = document.getElementById('btn-sound'); if(btn) btn.innerHTML = this.isMuted ? '<i class="fa-solid fa-volume-xmark text-xl"></i>' : '<i class="fa-solid fa-volume-high text-xl"></i>'; },
+            playTone(freq, type, duration) {
+                if(this.isMuted || !this.ctx) return;
+                const osc = this.ctx.createOscillator(); const gain = this.ctx.createGain();
+                osc.type = type; osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                osc.connect(gain); gain.connect(this.ctx.destination); osc.start();
+                gain.gain.exponentialRampToValueAtTime(0.00001, this.ctx.currentTime + duration); osc.stop(this.ctx.currentTime + duration);
+            },
+            playCorrect() { this.playTone(600, 'sine', 0.1); setTimeout(()=>this.playTone(800, 'sine', 0.2), 100); },
+            playError() { this.playTone(200, 'sawtooth', 0.3); },
+            playGrab() { this.playTone(400, 'square', 0.1); },
+            playTick() { this.playTone(1000, 'sine', 0.05); }
+        };
+
+        // ==========================================
+        // 🌌 GRAPHICS SYSTEM (Three.js Background)
+        // ==========================================
+        const GraphicsSys = {
+            scene: null, camera: null, renderer: null, pivot: null, particles: null,
+            init() {
+                const canvas = document.getElementById('bg-canvas');
+                this.scene = new THREE.Scene(); this.scene.fog = new THREE.FogExp2(0x070913, 0.002);
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.camera.position.z = 30;
+                this.renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                
+                this.pivot = new THREE.Group(); this.scene.add(this.pivot);
+                const geoCore = new THREE.IcosahedronGeometry(3, 1);
+                const matCore = new THREE.MeshBasicMaterial({ color: 0x0ea5e9, wireframe: true, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending });
+                this.pivot.add(new THREE.Mesh(geoCore, matCore));
+                for(let i=0; i<3; i++) {
+                    const ring = new THREE.Mesh(new THREE.TorusGeometry(6 + (i*3), 0.05, 16, 100), new THREE.MeshBasicMaterial({ color: i==1?0xa855f7:0x22d3ee, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending }));
+                    ring.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+                    this.pivot.add(ring);
+                }
+                this.pivot.position.set(0, 0, -15);
+                
+                const geoStars = new THREE.BufferGeometry(); const posArray = new Float32Array(600 * 3);
+                for(let i=0; i<1800; i++) posArray[i] = (Math.random() - 0.5) * 120;
+                geoStars.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+                this.particles = new THREE.Points(geoStars, new THREE.PointsMaterial({ size: 0.2, color: 0xffffff, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending }));
+                this.scene.add(this.particles);
+
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+                this.animate();
+            },
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                if(this.pivot) { this.pivot.rotation.x += 0.001; this.pivot.rotation.y += 0.002; }
+                if(this.particles) { this.particles.rotation.y += 0.0005; this.particles.rotation.x += 0.0002; }
+                this.renderer.render(this.scene, this.camera);
+            }
+        };
+
+        // ==========================================
+        // 📷 CAMERA DRAGGER (ระบบลากกล้อง)
+        // ==========================================
+        const CameraDragger = {
+            init() {
+                const camEl = document.getElementById('camera-preview');
+                let isDragging = false, currentX, currentY, initialX, initialY, xOffset = 20, yOffset = 20;
+
+                const dragStart = (e) => {
+                    initialX = e.type.includes('mouse') ? e.clientX - xOffset : e.touches[0].clientX - xOffset;
+                    initialY = e.type.includes('mouse') ? e.clientY - yOffset : e.touches[0].clientY - yOffset;
+                    if (e.target === camEl) isDragging = true;
+                };
+                const dragEnd = () => { if(isDragging) { initialX = currentX; initialY = currentY; isDragging = false; } };
+                const drag = (e) => {
+                    if (isDragging) {
+                        e.preventDefault();
+                        currentX = e.type.includes('mouse') ? e.clientX - initialX : e.touches[0].clientX - initialX;
+                        currentY = e.type.includes('mouse') ? e.clientY - initialY : e.touches[0].clientY - initialY;
+                        xOffset = Math.max(0, Math.min(currentX, window.innerWidth - camEl.offsetWidth));
+                        yOffset = Math.max(0, Math.min(currentY, window.innerHeight - camEl.offsetHeight));
+                        camEl.style.left = xOffset + 'px'; camEl.style.top = yOffset + 'px';
+                    }
+                };
+                camEl.addEventListener('touchstart', dragStart, {passive: false});
+                camEl.addEventListener('touchend', dragEnd, {passive: false});
+                camEl.addEventListener('touchmove', drag, {passive: false});
+                camEl.addEventListener('mousedown', dragStart, {passive: false});
+                window.addEventListener('mouseup', dragEnd, {passive: false});
+                window.addEventListener('mousemove', drag, {passive: false});
+            }
+        };
+
+        // ==========================================
+        // 🧍 POSE TRACKING & ZONE JUMP SYSTEM
+        // ==========================================
+        const PoseTrackingSys = {
+            pose: null, camera: null, isReady: false, baseShoulderY: null,
+            async init() {
+                const videoElement = document.getElementById('input_video');
+                const canvasElement = document.getElementById('camera-preview');
+                const canvasCtx = canvasElement.getContext('2d');
+                const statusEl = document.getElementById('cam-status');
+
+                try {
+                    // 1. ตรวจสอบและขอสิทธิ์กล้องล่วงหน้า เพื่อดักจับ NotAllowedError อย่างปลอดภัย
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        throw new Error("Browser API not supported");
+                    }
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    // ปิดสตรีมทันที เพื่อปล่อยให้ MediaPipe เป็นคนจัดการกล้องต่อ
+                    stream.getTracks().forEach(track => track.stop());
+
+                    // 2. หากอนุญาตกล้อง จึงเริ่มโหลดและทำงาน MediaPipe Pose
+                    this.pose = new Pose({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
+                    this.pose.setOptions({ modelComplexity: 1, smoothLandmarks: true, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+
+                    this.pose.onResults((results) => {
+                        canvasCtx.save();
+                        canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+                        
+                        if (results.poseLandmarks) {
+                            const landmarks = results.poseLandmarks;
+                            drawConnectors(canvasCtx, landmarks, window.POSE_CONNECTIONS || POSE_CONNECTIONS, {color: '#22d3ee', lineWidth: 2});
+                            drawLandmarks(canvasCtx, landmarks, {color: '#a855f7', lineWidth: 1, radius: 2});
+
+                            // จับตำแหน่งแกน X (Zone)
+                            const bodyCenterX = (landmarks[11].x + landmarks[12].x) / 2;
+                            const screenXRatio = 1 - bodyCenterX;
+
+                            // จับตำแหน่งแกน Y (Jump)
+                            const currentShoulderY = (landmarks[11].y + landmarks[12].y) / 2;
+                            if (this.baseShoulderY === null) {
+                                this.baseShoulderY = currentShoulderY;
+                            } else {
+                                if (currentShoulderY < this.baseShoulderY) {
+                                    this.baseShoulderY = (this.baseShoulderY * 0.98) + (currentShoulderY * 0.02);
+                                } else {
+                                    this.baseShoulderY = (this.baseShoulderY * 0.80) + (currentShoulderY * 0.20);
+                                }
+                            }
+
+                            let isJumping = false;
+                            if (this.baseShoulderY - currentShoulderY > 0.035) isJumping = true; 
+                            
+                            GestureSys.updateZone(screenXRatio, isJumping);
+                        } else {
+                            GestureSys.hideIndicator();
+                            this.baseShoulderY = null;
+                        }
+                        canvasCtx.restore();
+                    });
+
+                    this.camera = new Camera(videoElement, { onFrame: async () => { await this.pose.send({image: videoElement}); }, width: 320, height: 240 });
+                    await this.camera.start();
+                    
+                    this.isReady = true;
+                    statusEl.innerHTML = '<span class="text-green-400"><i class="fa-solid fa-check-circle"></i> Camera System Active</span>';
+                } catch (error) {
+                    // หากโดนบล็อกกล้องหรือไม่มีกล้อง ระบบจะทำการ Fallback แบบนุ่มนวล
+                    console.warn("Camera access denied or unavailable. Fallback to Mouse/Touch mode.", error);
+                    this.isReady = false;
+                    statusEl.innerHTML = '<span class="text-amber-400"><i class="fa-solid fa-triangle-exclamation"></i> Camera Blocked (Using Mouse Mode)</span>';
+                    canvasElement.style.display = 'none'; // ซ่อนกรอบหน้าจอ Webcam
+                }
+            }
+        };
+
+        const GestureSys = {
+            indicatorEl: null, isJumping: false, activeZone: null, jumpCooldown: false, smoothXRatio: 0.5,
+            init() { this.indicatorEl = document.getElementById('player-indicator'); },
+            updateZone(xRatio, isJumpingNow) {
+                if(!this.indicatorEl) return;
+                
+                this.smoothXRatio = (this.smoothXRatio * 0.8) + (xRatio * 0.2);
+                const percentX = Math.max(0, Math.min(100, this.smoothXRatio * 100));
+                
+                let currentZone = 1; 
+                if (this.smoothXRatio < 0.33) currentZone = 0;
+                else if (this.smoothXRatio > 0.66) currentZone = 2;
+
+                if (!this.jumpCooldown && !isJumpingNow) {
+                    this.indicatorEl.style.display = 'flex';
+                    this.indicatorEl.style.left = `${percentX}%`;
+
+                    document.querySelectorAll('.choice-card').forEach(el => el.classList.remove('hovered'));
+                    const cards = document.querySelectorAll('.choice-card');
+                    if(cards && cards[currentZone]) {
+                        cards[currentZone].classList.add('hovered');
+                        this.activeZone = currentZone;
+                    }
+                }
+
+                if (isJumpingNow && !this.isJumping && !this.jumpCooldown) {
+                    this.indicatorEl.classList.add('scale-150', 'bg-purple-500', 'border-purple-300');
+                    setTimeout(() => this.indicatorEl.classList.remove('scale-150', 'bg-purple-500', 'border-purple-300'), 300);
+
+                    document.getElementById('question-container').style.boxShadow = "inset 0 0 40px rgba(168, 85, 247, 0.5)";
+                    setTimeout(() => { document.getElementById('question-container').style.boxShadow = ""; }, 300);
+
+                    if (this.activeZone !== null && !GameState.isAnswering) {
+                        this.jumpCooldown = true; setTimeout(() => { this.jumpCooldown = false; }, 2000);
+                        AudioSys.playGrab();
+                        const cards = document.querySelectorAll('.choice-card');
+                        if (cards && cards[this.activeZone]) {
+                            cards[this.activeZone].classList.add('grabbing');
+                            GameSys.checkAnswer(this.activeZone, cards[this.activeZone]);
+                        }
+                    }
+                }
+                this.isJumping = isJumpingNow;
+            },
+            hideIndicator() {
+                if(this.indicatorEl) this.indicatorEl.style.display = 'none';
+                document.querySelectorAll('.choice-card').forEach(el => el.classList.remove('hovered', 'grabbing'));
+                this.activeZone = null;
+                this.isJumping = false;
+            }
+        };
+
+        const DragDropSys = {
+            init() {
+                const selectAnswer = (e) => {
+                    if(GameState.isAnswering) return;
+                    const card = e.target.closest('.choice-card');
+                    if(!card) return;
+                    e.preventDefault(); AudioSys.playGrab();
+                    card.classList.add('grabbing');
+                    GameSys.checkAnswer(parseInt(card.dataset.index), card);
+                };
+                const choicesContainer = document.getElementById('ui-choices');
+                choicesContainer.addEventListener('mousedown', selectAnswer);
+                choicesContainer.addEventListener('touchstart', selectAnswer, {passive: false});
+            }
+        };
+
+        // ==========================================
+        // 🚀 GAME LOGIC SYSTEM
+        // ==========================================
+        const GameSys = {
+            startGame() {
+                if(AudioSys.ctx && AudioSys.ctx.state === 'suspended') AudioSys.ctx.resume();
+                
+                document.getElementById('screen-menu').classList.add('hidden-sys');
+                document.getElementById('screen-result').classList.add('hidden-sys');
+                document.getElementById('screen-game').classList.remove('hidden-sys');
+                
+                if(PoseTrackingSys.isReady) document.getElementById('camera-preview').classList.remove('hidden-sys');
+
+                // Generate Attempt ID
+                GameState.attemptId = "ATT-" + Date.now() + "-" + Math.floor(Math.random()*1000);
+                GameState.questionResults = [];
+
+                // สุ่มคำถาม 5 ข้อ
+                const shuffled = [...QuestionBank].sort(() => 0.5 - Math.random());
+                GameState.activeQuestions = shuffled.slice(0, 5);
+                
+                GameState.score = 0; GameState.energy = 5; GameState.qIndex = 0;
+                GameState.stats = { correct: 0, wrong: 0, timeUsed: 0 };
+                GameState.startTime = Date.now();
+                
+                this.updateUI(); this.loadQuestion();
+            },
+
+            showHowToPlay() { document.getElementById('modal-howto').classList.remove('hidden-sys'); },
+            hideHowToPlay() { document.getElementById('modal-howto').classList.add('hidden-sys'); },
+            
+            returnToMenu() {
+                this.clearTimer();
+                document.getElementById('screen-game').classList.add('hidden-sys');
+                document.getElementById('screen-result').classList.add('hidden-sys');
+                document.getElementById('camera-preview').classList.add('hidden-sys');
+                document.getElementById('screen-menu').classList.remove('hidden-sys');
+            },
+
+            updateUI() {
+                document.getElementById('ui-score').innerText = GameState.score.toString().padStart(3, '0');
+                let heartsHtml = '';
+                for(let i=0; i<5; i++) heartsHtml += i < GameState.energy ? '<i class="fa-solid fa-heart text-red-500 drop-shadow-[0_0_5px_rgba(239,68,68,0.8)]"></i>' : '<i class="fa-regular fa-heart text-slate-600"></i>';
+                document.getElementById('ui-energy').innerHTML = heartsHtml;
+                document.getElementById('ui-qnum').innerText = GameState.qIndex + 1;
+            },
+
+            loadQuestion() {
+                if (GameState.qIndex >= 5 || GameState.energy <= 0) { this.endGame(); return; }
+                
+                GameState.isAnswering = false; GameState.timer = 20; this.updateTimerUI();
+                
+                const q = GameState.activeQuestions[GameState.qIndex];
+                document.getElementById('ui-category').innerText = q.cat;
+                document.getElementById('ui-question').innerText = q.q;
+
+                const dz = document.getElementById('question-container');
+                dz.classList.remove('success', 'error');
+                
+                const overlay = document.getElementById('question-result-overlay');
+                overlay.classList.add('opacity-0'); overlay.classList.remove('opacity-100');
+                document.getElementById('question-result-desc').classList.add('hidden');
+
+                const choicesDiv = document.getElementById('ui-choices');
+                choicesDiv.innerHTML = '';
+                
+                q.c.forEach((choice, idx) => {
+                    const btn = document.createElement('div');
+                    btn.className = 'choice-card p-4 rounded-xl text-center font-semibold text-lg flex items-center justify-center min-h-[80px] shadow-sm select-none';
+                    btn.innerText = choice; btn.dataset.index = idx;
+                    choicesDiv.appendChild(btn);
+                });
+
+                this.startTimer();
+            },
+
+            startTimer() {
+                this.clearTimer();
+                const timerBox = document.getElementById('ui-timer-box');
+                timerBox.classList.remove('timer-warning');
+                GameState.timerInterval = setInterval(() => {
+                    GameState.timer--; this.updateTimerUI();
+                    if(GameState.timer <= 5 && GameState.timer > 0) { AudioSys.playTick(); timerBox.classList.add('timer-warning'); }
+                    if(GameState.timer <= 0) this.handleTimeOut();
+                }, 1000);
+            },
+            clearTimer() { if(GameState.timerInterval) { clearInterval(GameState.timerInterval); GameState.timerInterval = null; } },
+            updateTimerUI() { document.getElementById('ui-timer').innerText = GameState.timer; },
+
+            checkAnswer(selectedIndex, cardElement) {
+                if (GameState.isAnswering) return;
+                GameState.isAnswering = true; this.clearTimer();
+
+                const q = GameState.activeQuestions[GameState.qIndex];
+                const isCorrect = (selectedIndex === q.a);
+                const timeTaken = 20 - GameState.timer;
+                GameState.stats.timeUsed += timeTaken;
+
+                const dz = document.getElementById('question-container');
+                const overlay = document.getElementById('question-result-overlay');
+                const desc = document.getElementById('question-result-desc');
+                
+                overlay.classList.remove('opacity-0'); overlay.classList.add('opacity-100');
+                desc.innerText = q.desc; desc.classList.remove('hidden');
+
+                let pointsEarned = 0;
+
+                if (isCorrect) {
+                    AudioSys.playCorrect(); dz.classList.add('success');
+                    pointsEarned = 10;
+                    let bonusText = "";
+                    if (GameState.timer >= 15) { pointsEarned += 5; bonusText = " (+5 SPEED BONUS)"; }
+                    
+                    document.getElementById('question-result-icon').innerHTML = '<i class="fa-solid fa-circle-check text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)]"></i>';
+                    document.getElementById('question-result-text').className = "text-4xl font-bold font-sci tracking-widest text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)]";
+                    document.getElementById('question-result-text').innerText = "CORRECT!";
+                    document.getElementById('question-result-pts').className = "text-xl font-bold font-sci tracking-widest text-amber-400 mt-2";
+                    document.getElementById('question-result-pts').innerText = `+${pointsEarned} POINTS${bonusText}`;
+                    
+                    GameState.score += pointsEarned; GameState.stats.correct++;
+                } else {
+                    AudioSys.playError(); dz.classList.add('error');
+                    pointsEarned = -5;
+                    
+                    document.getElementById('question-result-icon').innerHTML = '<i class="fa-solid fa-circle-xmark text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]"></i>';
+                    document.getElementById('question-result-text').className = "text-4xl font-bold font-sci tracking-widest text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]";
+                    document.getElementById('question-result-text').innerText = "INCORRECT!";
+                    document.getElementById('question-result-pts').className = "text-xl font-bold font-sci tracking-widest text-red-400 mt-2";
+                    document.getElementById('question-result-pts').innerText = "-5 POINTS & -1 ENERGY";
+                    
+                    GameState.score = Math.max(0, GameState.score - 5); GameState.energy--; GameState.stats.wrong++;
+                }
+                
+                // บันทึกข้อมูลข้อนี้ลง Array
+                GameState.questionResults.push({
+                    questionId: q.id,
+                    category: q.cat,
+                    question: q.q,
+                    studentAnswer: q.c[selectedIndex],
+                    correctAnswer: q.c[q.a],
+                    result: isCorrect ? "correct" : "wrong",
+                    score: pointsEarned,
+                    timeUsed: timeTaken,
+                    questionOrder: GameState.qIndex + 1
+                });
+
+                this.updateUI();
+                setTimeout(() => { this.nextQuestion(); }, 2500); // ให้อ่านคำอธิบาย 2.5 วิ
+            },
+
+            handleTimeOut() {
+                GameState.isAnswering = true; this.clearTimer(); AudioSys.playError();
+                
+                const q = GameState.activeQuestions[GameState.qIndex];
+                const timeTaken = 20;
+                GameState.stats.timeUsed += timeTaken;
+
+                const dz = document.getElementById('question-container');
+                const overlay = document.getElementById('question-result-overlay');
+                const desc = document.getElementById('question-result-desc');
+                
+                dz.classList.add('error');
+                overlay.classList.remove('opacity-0'); overlay.classList.add('opacity-100');
+                desc.innerText = q.desc; desc.classList.remove('hidden');
+                
+                document.getElementById('question-result-icon').innerHTML = '<i class="fa-solid fa-clock text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]"></i>';
+                document.getElementById('question-result-text').className = "text-4xl font-bold font-sci tracking-widest text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]";
+                document.getElementById('question-result-text').innerText = "TIME OUT!";
+                document.getElementById('question-result-pts').className = "text-xl font-bold font-sci tracking-widest text-red-400 mt-2";
+                document.getElementById('question-result-pts').innerText = "-1 ENERGY";
+                
+                GameState.energy--; GameState.stats.wrong++;
+                
+                GameState.questionResults.push({
+                    questionId: q.id, category: q.cat, question: q.q,
+                    studentAnswer: "TIMEOUT", correctAnswer: q.c[q.a],
+                    result: "wrong", score: 0, timeUsed: timeTaken, questionOrder: GameState.qIndex + 1
+                });
+
+                this.updateUI();
+                setTimeout(() => { this.nextQuestion(); }, 2500);
+            },
+
+            nextQuestion() {
+                GameState.qIndex++;
+                if (GameState.energy <= 0 || GameState.qIndex >= 5) this.endGame(); else this.loadQuestion();
+            },
+
+            endGame() {
+                this.clearTimer();
+                const totalTimeSec = GameState.stats.timeUsed;
+                const min = Math.floor(totalTimeSec / 60).toString().padStart(2, '0');
+                const sec = (totalTimeSec % 60).toString().padStart(2, '0');
+                const completed = GameState.energy > 0;
+                
+                document.getElementById('screen-game').classList.add('hidden-sys');
+                document.getElementById('screen-result').classList.remove('hidden-sys');
+                document.getElementById('camera-preview').classList.add('hidden-sys');
+                document.getElementById('btn-playagain').disabled = true;
+                document.getElementById('btn-playagain').classList.add('opacity-50', 'cursor-not-allowed');
+
+                document.getElementById('result-header').innerText = completed ? "MISSION COMPLETE" : "GAME OVER";
+                document.getElementById('result-header').className = `text-4xl sm:text-5xl font-sci font-bold mb-2 tracking-widest ${completed ? 'text-cyan-400 neon-text-cyan' : 'text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]'}`;
+                
+                document.getElementById('result-score').innerText = GameState.score;
+                document.getElementById('result-time').innerText = `${min}:${sec}`;
+                document.getElementById('result-correct').innerText = GameState.stats.correct;
+                document.getElementById('result-wrong').innerText = GameState.stats.wrong;
+                
+                const acc = Math.round((GameState.stats.correct / (GameState.stats.correct + GameState.stats.wrong)) * 100) || 0;
+                document.getElementById('result-acc').innerText = `${acc}%`;
+
+                let rank = "KEEP TRAINING", icon = '<i class="fa-solid fa-rocket"></i>', color = "text-slate-400";
+                if (completed) {
+                    if (acc >= 90) { rank = "MASTER SCIENTIST"; icon = '<i class="fa-solid fa-trophy"></i>'; color = "text-amber-400 drop-shadow-[0_0_10px_rgba(251,191,36,0.8)]"; }
+                    else if (acc >= 80) { rank = "SCIENCE EXPERT"; icon = '<i class="fa-solid fa-medal"></i>'; color = "text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]"; }
+                    else if (acc >= 70) { rank = "SCIENCE EXPLORER"; icon = '<i class="fa-solid fa-compass"></i>'; color = "text-purple-400 drop-shadow-[0_0_10px_rgba(168,85,247,0.8)]"; }
+                    else if (acc >= 60) { rank = "SCIENCE TRAINEE"; icon = '<i class="fa-solid fa-user-astronaut"></i>'; color = "text-green-400 drop-shadow-[0_0_10px_rgba(74,222,128,0.8)]"; }
+                }
+
+                document.getElementById('result-rank').innerText = rank;
+                document.getElementById('result-rank').className = `text-2xl font-bold ${color}`;
+                document.getElementById('result-icon').innerHTML = icon;
+                document.getElementById('result-icon').className = `text-6xl mb-4 ${color}`;
+
+                // เตรียมข้อมูลส่งให้ Backend (Google Apps Script)
+                const payload = {
+                    action: "saveAttempt",
+                    attemptId: GameState.attemptId,
+                    student: {
+                        firstName: GameState.student.firstName,
+                        lastName: GameState.student.lastName
+                    },
+                    summary: {
+                        score: GameState.score,
+                        correct: GameState.stats.correct,
+                        wrong: GameState.stats.wrong,
+                        accuracy: acc,
+                        totalTime: totalTimeSec,
+                        questionCount: GameState.questionResults.length,
+                        deviceMode: PoseTrackingSys.isReady ? "Zone Jump (Camera)" : "Mouse/Touch",
+                        missionLevel: "SCIENCE MISSION V3"
+                    },
+                    questions: GameState.questionResults
+                };
+
+                // ส่งข้อมูล
+                BackendSys.saveAttempt(payload);
+            }
+        };
+
+        // ==========================================
+        // 🏁 SYSTEM INITIALIZATION
+        // ==========================================
+        window.onload = () => {
+            GraphicsSys.init();     
+            PoseTrackingSys.init(); 
+            GestureSys.init();      
+            DragDropSys.init();     
+            CameraDragger.init();   
+            LoginSys.init(); // เช็ค Login
+        };
+        
+        window.GameSys = GameSys;
+        window.AudioSys = AudioSys;
+        window.LoginSys = LoginSys;
+    </script>
+</body>
+</html>
